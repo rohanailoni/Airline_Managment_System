@@ -1,0 +1,395 @@
+<html>
+    <head>
+        <style>
+            {#asset styles/style.css @encoding=utf8}
+        </style>
+    </head>
+    <style>* {
+    box-sizing: border-box;
+}
+
+html, body {
+    margin: 0px;
+    padding: 0px;
+    font-family: Segoe UI,Helvetica,Arial,sans-serif;
+    font-size: 16px;
+}
+
+.container {
+    display: flex;
+    width: 95%;
+    position: relative;
+    margin: 10px auto;
+    border-bottom-left-radius: 12px;
+    border-bottom-right-radius: 12px;
+}
+
+.content-details-row {
+    display: flex;
+    padding: 10px 0;
+}
+
+.content-details-small-row {
+    display: flex;
+    padding: 3px 0;
+}
+
+.content-details-field {
+    padding: 5px 10px;
+    max-width: 220px;
+}
+
+.content-details-small-field {
+    padding: 5px 6px;
+    max-width: 220px;
+}
+
+.content-details-field-label {
+    font-size: 12px;
+}
+
+.content-details-field-value {
+    padding-top: 10px;
+    text-transform: uppercase;
+}
+
+.content-details-field-inline-value {
+    padding-left: 15px;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.content-critical-text {
+    font-size: 36px;
+}
+
+.main {
+    width: 70%;
+    position: relative;
+}
+
+.main:before {
+    display: inline-block;
+    content: "";
+    position: absolute;
+    top: 25px;
+    left: 10px;
+    width: 50px;
+    height: 50px;
+    background-size: 50px 50px;
+    background-image: url("{#asset ../images/airplane.png @encoding=dataURI}");
+    background-repeat: no-repeat;
+    transform: rotate(-60deg);
+}
+
+.main-header {
+   background-color: #ECEEED;
+   color: #FFFEFF;
+   font-size: 14px;
+   font-weight: bold;
+   border-top-left-radius: 18px;
+}
+
+.main-header-banner {
+    background-color: #4892D0;
+    display: inline-block;
+    padding: 8px 20px;
+    width: 220px;
+    font-size: 12px;
+    text-align: right;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+}
+
+.main-header-title {
+    background-color: #4892D0;
+    text-align: right;
+    margin-top: -2px;
+    padding: 8px 20px;
+    text-transform: uppercase;
+}
+
+.main-content {
+    display: flex;
+    background-color: #4892D0;
+    border-bottom-left-radius: 18px;
+}
+
+.main-content-barcode-container {
+    display: inline-flex;
+    width: 70px;
+    justify-content: center;
+    align-items: center;
+}
+
+.main-content-barcode {
+    display: inline-block;
+    background-color: #FDFDFF;
+    width: 50px;
+    padding: 5px;
+    height: auto;
+}
+
+.main-content-barcode img {
+    width: 100%;
+    height: auto;
+}
+
+.main-content-details {
+    background-color: #ECEEED;
+    display: inline-block;
+    flex: 1 auto;
+    padding: 15px 20px 25px;
+}
+
+.main-content-country-code {
+    font-size: 62px;
+}
+
+.main-content-route-icon {
+    width: auto;
+    height: 80px;
+    margin-top: -8px;
+    margin-left: 5px;
+    margin-right: 5px;
+}
+
+.aside {
+    width: 30%;
+    background-color: #ECEEED;
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+}
+
+.aside:before {
+    display: block;
+    content: "";
+    position: absolute;
+    top: 0;
+    border-left: 3px dashed #CACBC8;
+    bottom: 0;
+}
+
+.aside-header {
+    color: #FFFEFF;
+    font-size: 14px;
+    font-weight: bold;
+    border-bottom-right-radius: 18px;
+}
+
+.aside-header-banner {
+    background-color: #4892D0;
+    display: inline-block;
+    padding: 8px 20px;
+    width: 95%;
+    font-size: 12px;
+    text-align: left;
+    border-top-left-radius: 18px;
+    border-top-right-radius: 18px;
+    border-bottom-left-radius: 18px;
+}
+
+.aside-header-title {
+    background-color: #4892D0;
+    text-align: right;
+    margin-top: -2px;
+    padding: 8px 20px;
+    text-transform: uppercase;
+}
+
+.aside-content {
+    display: flex;
+    font-size: 13px;
+}
+
+.aside-content-details {
+    padding: 15px 10px 10px;
+    width: 100%;
+}
+
+.aside-footer {
+    color: #5498DD;
+    text-align: center;
+    font-weight: bold;
+    font-size: 17px;
+}
+</style>
+    <body>
+        <section class="container">
+            <main class="main">
+                <header class="main-header">
+                    <div>
+                        <div class="main-header-banner">
+                            BOARDING PASS
+                        </div>
+                    </div>
+                    <div class="main-header-title">
+                        {{getClassTypeInText ticket.classType}}
+                    </div>
+                </header>
+                <section class="main-content">
+                    <div class="main-content-barcode-container">
+                        <div class="main-content-barcode">
+
+                            <img alt="Barcoded value {{ticket.code}}" src="http://bwipjs-api.metafloor.com/?bcid=pdf417&text=IETCKETSDNOSDNF&columns=2&rotate=L&scale=2">
+                        </div>
+                    </div>
+                    <div class="main-content-details">
+                        <div class="content-details-row">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">Aileni rohan reddy</span>
+                                <div class="content-details-field-value" style="padding-left: 15px">
+                                    Aileni Rohan reddy
+                                </div>
+                            </div>
+                            <div class="content-details-field" style="margin-left: 25px">
+                                <span class="content-details-field-label">FLIGHT</span>
+                                <div class="content-details-field-value">
+                                    TE2050
+                                </div>
+                            </div>
+                        </div>
+                        <div class="content-details-row" style="justify-content: center;">
+                            <div class="main-content-country-code">CGK</div>
+                            <div>
+                                <img class="main-content-route-icon" src="{% static 'image/rk.wepb' %}" />
+                            </div>
+                            <div class="main-content-country-code">ORD</div>
+                        </div>
+                        <div class="content-details-row">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">CLASS</span>
+                                <div class="content-details-field-value content-critical-text">
+                                    Bussiness Class
+                                </div>
+                            </div>
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">BOARDING TILL</span>
+                                <div class="content-details-field-value content-critical-text">
+                                    2020-12-31 23:38:39
+                                </div>
+                            </div>
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">GATE</span>
+                                <div class="content-details-field-value content-critical-text">
+                                    6C
+                                </div>
+                            </div>
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">DATE</span>
+                                <div class="content-details-field-value">
+                                    2020-12-31 23:38:39
+                                </div>
+                            </div>
+                            <div class="content-details-field" style="margin-left: 25px;">
+                                <span class="content-details-field-label">TIME</span>
+                                <div class="content-details-field-value">
+                                    23:38:39
+                                </div>
+                            </div>
+                        </div>
+                        <div class="content-details-row" style="justify-content: space-between;">
+                            <div class="content-details-field-value">
+                                ETKT: IETCKETSDNOSDNF
+                            </div>
+                            <div class="content-details-field-value">
+                                BAG air
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+            <aside class="aside">
+                <header class="aside-header">
+                    <div style="display: flex; justify-content: flex-end;">
+                        <div class="aside-header-banner">
+                            BOARDING PASS
+                        </div>
+                    </div>
+                    <div class="aside-header-title">
+                        {{getClassTypeInText ticket.classType}}
+                    </div>
+                </header>
+                <section class="aside-content">
+                    <div class="aside-content-details">
+                        <div class="content-details-small-row">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">PASSENGER NAME</span>
+                                <div class="content-details-field-value" style="padding-left: 15px">
+                                    Aileni Rohan Reddy
+                                </div>
+                            </div>
+                        </div>
+                        <div class="content-details-small-row">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label" style="display: inline-block; width: 50px">FROM</span>
+                                <span class="content-details-field-inline-value">Tangerang, Banten</span>
+                            </div>
+                        </div>
+                        <div class="content-details-small-row" style="margin-top: -10px">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label" style="display: inline-block; width: 50px">TO</span>
+                                <span class="content-details-field-inline-value">Chicago</span>
+                            </div>
+                        </div>
+                        <div class="content-details-small-row">
+                            <div class="content-details-small-field">
+                                <span class="content-details-field-label">FLIGHT</span>
+                                <div class="content-details-field-value">
+                                    TE2050
+                                </div>
+                            </div>
+                            <div class="content-details-small-field">
+                                <span class="content-details-field-label">CLASS</span>
+                                <div class="content-details-field-value">
+                                    BS
+                                </div>
+                            </div>
+                            <div class="content-details-small-field">
+                                <span class="content-details-field-label">DATE</span>
+                                <div class="content-details-field-value">
+                                    2020-12-31 23:38:39
+                                </div>
+                            </div>
+                            <div class="content-details-small-field">
+                                <span class="content-details-field-label">TIME</span>
+                                <div class="content-details-field-value">
+                                    10h
+                                </div>
+                            </div>
+                        </div>
+                        <div class="content-details-small-row">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label">FLIGHT</span>
+                                <div class="content-details-field-value">
+                                    TE2050
+                                </div>
+                            </div>
+                            <div class="content-details-field" style="margin-left: 25px">
+                                <span class="content-details-field-label">BOARD TILL</span>
+                                <div class="content-details-field-value">
+                                    23:38:39
+                                </div>
+                            </div>
+                        </div>
+                        <div class="content-details-small-row">
+                            <div class="content-details-field">
+                                <span class="content-details-field-label" style="display: block; text-align: center;">SEAT</span>
+                                <div class="content-details-field-value content-critical-text">
+                                    6C
+                                </div>
+                            </div>
+                        </div>
+                        <footer class="aside-footer">
+                            HAVE A NICE TRIP!
+                        </footer>
+                    </div>
+                </section>
+            </aside>
+        </section>
+        <script>
+            window.JSREPORT_READY_TO_START = true
+        </script>
+    </body>
+</html>

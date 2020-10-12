@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+        <title>Flight - Travel and Tour</title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="apple-touch-icon" href="apple-touch-icon.png">
+        {% load static %}
+        <link rel="stylesheet" href="{% static 'css/bootstrap.min.css' %}">
+        <link rel="stylesheet" href="{% static 'css/bootstrap-theme.min.css' %}">
+        <link rel="stylesheet" href="{% static 'css/fontAwesome.css' %}">
+        <link rel="stylesheet" href="{% static 'css/hero-slider.css' %}">
+        <link rel="stylesheet" href="{% static 'css/owl-carousel.css' %}">
+        <link rel="stylesheet" href="{% static 'css/datepicker.css' %}">
+        <link rel="stylesheet" href="{% static 'css/tooplate-style.css' %}">
+
+        <link href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,600,700,800" rel="stylesheet">
+
+        <script src="{% static 'jss/vendor/modernizr-2.8.3-respond-1.4.2.min.js' %}"></script>
+    </head>
+<body>
+<section class="services">
+        <div class="container">
+            <div class="row">
+                {% for i in l %}
+                <div class="col-md-10">
+                <form action="/search/{{ i.leg_id }}/{{ id }}/" method="post">{% csrf_token %}
+                    <div class="service-item first-service">
+
+                        <h4>{{ i.leg_id }}</h4>
+                        <div class="col-md-5 col-md-offset-1">
+                    <section id="first-tab-group" class="tabgroup">
+                        <div id="tab1">
+                        <div class="submit-form">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <fieldset>
+                                        <button type="submit" id="form-submit" class="btn">books your seats now!</button>
+                                    </fieldset>
+                                </div>
+                            </div>
+                        </div>
+                        </div>
+                    </section>
+                        </div>
+                    </div>
+                </form>
+                </div>
+                {% endfor %}
+
+                </div>
+            </div>
+        </div>
+</section>
+
+
+
+</body>
+</html>
