@@ -14,13 +14,410 @@ from faker import Faker
 import datetime
 from django.conf import settings
 from django.core.mail import send_mail
-
+from spellchecker.utils import _parse_into_words, ENSURE_UNICODE, load_file
 from AMS1.settings import BASE_DIR
-from app.models import userinfo,enquiry,flight_info,leg,city_code,auto_correction,comment,one_time_password,login_log,logout_log,shortcuts
+from app.models import userinfo,enquiry,flight_info,leg,city_code,auto_correction,comment,one_time_password,login_log,logout_log,shortcuts,passengers
 import pytz
 from django.utils import timezone
 from spellchecker import SpellChecker
+from collections import Counter
+import re
+#spell checking algo start
+class SpellChecker1(object):
 
+
+    __slots__ = ["_distance", "_word_frequency", "_tokenizer", "_case_sensitive"]
+
+    def __init__(
+        self,
+        language="en",
+        local_dictionary=None,
+        distance=2,
+        tokenizer=None,
+        case_sensitive=False,
+    ):
+        self._distance = None
+        self.distance = distance  # use the setter value check
+
+        self._tokenizer = _parse_into_words
+        if tokenizer is not None:
+            self._tokenizer = tokenizer
+
+        self._case_sensitive = case_sensitive if not language else False
+        self._word_frequency = WordFrequency(self._tokenizer, self._case_sensitive)
+
+        if local_dictionary:
+            self._word_frequency.load_dictionary(local_dictionary)
+        elif language:
+            filename = "{}.json.gz".format(language.lower())
+            here = os.path.dirname(__file__)
+            full_filename = os.path.join(here, "resources", filename)
+            if not os.path.exists(full_filename):
+                msg = (
+                    "The provided dictionary language ({}) does not " "exist!"
+                ).format(language.lower())
+                raise ValueError(msg)
+            self._word_frequency.load_dictionary(full_filename)
+
+    def __contains__(self, key):
+        """ setup easier known checks """
+        key = ENSURE_UNICODE(key)
+        return key in self._word_frequency
+
+    def __getitem__(self, key):
+        """ setup easier frequency checks """
+        key = ENSURE_UNICODE(key)
+        return self._word_frequency[key]
+
+    @property
+    def word_frequency(self):
+        """ WordFrequency: An encapsulation of the word frequency `dictionary`
+            Note:
+                Not settable """
+        return self._word_frequency
+
+    @property
+    def distance(self):
+        """ int: The maximum edit distance to calculate
+            Note:
+                Valid values are 1 or 2; if an invalid value is passed, \
+                defaults to 2 """
+        return self._distance
+
+    @distance.setter
+    def distance(self, val):
+        """ set the distance parameter """
+        tmp = 2
+        try:
+            int(val)
+            if val > 0 and val <= 2:
+                tmp = val
+        except (ValueError, TypeError):
+            pass
+        self._distance = tmp
+
+    def split_words(self, text):
+        """ Split text into individual `words` using either a simple whitespace
+            regex or the passed in tokenizer
+            Args:
+                text (str): The text to split into individual words
+            Returns:
+                list(str): A listing of all words in the provided text """
+        text = ENSURE_UNICODE(text)
+        return self._tokenizer(text)
+
+    def export(self, filepath, encoding="utf-8", gzipped=True):
+        """ Export the word frequency list for import in the future
+             Args:
+                filepath (str): The filepath to the exported dictionary
+                encoding (str): The encoding of the resulting output
+                gzipped (bool): Whether to gzip the dictionary or not """
+        data = json.dumps(self.word_frequency.dictionary, sort_keys=True)
+        write_file(filepath, encoding, gzipped, data)
+
+    def word_probability(self, word, total_words=None):
+        """ Calculate the probability of the `word` being the desired, correct
+            word
+            Args:
+                word (str): The word for which the word probability is \
+                calculated
+                total_words (int): The total number of words to use in the \
+                calculation; use the default for using the whole word \
+                frequency
+            Returns:
+                float: The probability that the word is the correct word """
+        if total_words is None:
+            total_words = self._word_frequency.total_words
+        word = ENSURE_UNICODE(word)
+        return self._word_frequency.dictionary[word] / total_words
+
+    def correction(self, word):
+        """ The most probable correct spelling for the word
+            Args:
+                word (str): The word to correct
+            Returns:
+                str: The most likely candidate """
+        word = ENSURE_UNICODE(word)
+        candidates = list(self.candidates(word))
+        return max(sorted(candidates), key=self.word_probability)
+
+    def candidates(self, word):
+        """ Generate possible spelling corrections for the provided word up to
+            an edit distance of two, if and only when needed
+            Args:
+                word (str): The word for which to calculate candidate spellings
+            Returns:
+                set: The set of words that are possible candidates """
+        word = ENSURE_UNICODE(word)
+        if self.known([word]):  # short-cut if word is correct already
+            return {word}
+
+        if not self._check_if_should_check(word):
+            return {word}
+
+        # get edit distance 1...
+        res = [x for x in self.edit_distance_1(word)]
+        tmp = self.known(res)
+        if tmp:
+            return tmp
+        # if still not found, use the edit distance 1 to calc edit distance 2
+        if self._distance == 2:
+            tmp = self.known([x for x in self.__edit_distance_alt(res)])
+            if tmp:
+                return tmp
+        return {word}
+
+    def known(self, words):
+        """ The subset of `words` that appear in the dictionary of words
+            Args:
+                words (list): List of words to determine which are in the \
+                corpus
+            Returns:
+                set: The set of those words from the input that are in the \
+                corpus """
+        words = [ENSURE_UNICODE(w) for w in words]
+        tmp = [w if self._case_sensitive else w.lower() for w in words]
+        return set(
+            w
+            for w in tmp
+            if w in self._word_frequency.dictionary
+            and self._check_if_should_check(w)
+        )
+
+    def unknown(self, words):
+        """ The subset of `words` that do not appear in the dictionary
+            Args:
+                words (list): List of words to determine which are not in the \
+                corpus
+            Returns:
+                set: The set of those words from the input that are not in \
+                the corpus """
+        words = [ENSURE_UNICODE(w) for w in words]
+        tmp = [
+            w if self._case_sensitive else w.lower()
+            for w in words
+            if self._check_if_should_check(w)
+        ]
+        return set(w for w in tmp if w not in self._word_frequency.dictionary)
+
+    def edit_distance_1(self, word):
+        """ Compute all strings that are one edit away from `word` using only
+            the letters in the corpus
+            Args:
+                word (str): The word for which to calculate the edit distance
+            Returns:
+                set: The set of strings that are edit distance one from the \
+                provided word """
+        word = ENSURE_UNICODE(word).lower() if not self._case_sensitive else ENSURE_UNICODE(word)
+        if self._check_if_should_check(word) is False:
+            return {word}
+        letters = self._word_frequency.letters
+        splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
+        deletes = [L + R[1:] for L, R in splits if R]
+        transposes = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R) > 1]
+        replaces = [L + c + R[1:] for L, R in splits if R for c in letters]
+        inserts = [L + c + R for L, R in splits for c in letters]
+        return set(deletes + transposes + replaces + inserts)
+
+    def edit_distance_2(self, word):
+        """ Compute all strings that are two edits away from `word` using only
+            the letters in the corpus
+            Args:
+                word (str): The word for which to calculate the edit distance
+            Returns:
+                set: The set of strings that are edit distance two from the \
+                provided word """
+        word = ENSURE_UNICODE(word).lower() if not self._case_sensitive else ENSURE_UNICODE(word)
+        return [
+            e2 for e1 in self.edit_distance_1(word) for e2 in self.edit_distance_1(e1)
+        ]
+
+    def __edit_distance_alt(self, words):
+        """ Compute all strings that are 1 edits away from all the words using
+            only the letters in the corpus
+            Args:
+                words (list): The words for which to calculate the edit distance
+            Returns:
+                set: The set of strings that are edit distance two from the \
+                provided words """
+        words = [ENSURE_UNICODE(w) for w in words]
+        tmp = [
+            w if self._case_sensitive else w.lower()
+            for w in words
+            if self._check_if_should_check(w)
+        ]
+        return [e2 for e1 in tmp for e2 in self.known(self.edit_distance_1(e1))]
+
+    def _check_if_should_check(self, word):
+        if len(word) == 1 and word in string.punctuation:
+            return False
+        if len(word) > self._word_frequency.longest_word_length + 3:  # magic number to allow removal of up to 2 letters.
+            return False
+        try:  # check if it is a number (int, float, etc)
+            float(word)
+            return False
+        except ValueError:
+            pass
+
+        return True
+
+
+class WordFrequency(object):
+
+
+    __slots__ = [
+        "_dictionary",
+        "_total_words",
+        "_unique_words",
+        "_letters",
+        "_tokenizer",
+        "_case_sensitive",
+        "_longest_word_length"
+    ]
+
+    def __init__(self, tokenizer=None, case_sensitive=False):
+        self._dictionary = Counter()
+        self._total_words = 0
+        self._unique_words = 0
+        self._letters = set()
+        self._case_sensitive = case_sensitive
+        self._longest_word_length = 0
+
+        self._tokenizer = _parse_into_words
+        if tokenizer is not None:
+            self._tokenizer = tokenizer
+
+    def __contains__(self, key):
+        """ turn on contains """
+        key = ENSURE_UNICODE(key)
+        key = key if self._case_sensitive else key.lower()
+        return key in self._dictionary
+
+    def __getitem__(self, key):
+        """ turn on getitem """
+        key = ENSURE_UNICODE(key)
+        key = key if self._case_sensitive else key.lower()
+        return self._dictionary[key]
+
+    def pop(self, key, default=None):
+        key = ENSURE_UNICODE(key)
+        key = key if self._case_sensitive else key.lower()
+        return self._dictionary.pop(key, default)
+
+    @property
+    def dictionary(self):
+
+        return self._dictionary
+
+    @property
+    def total_words(self):
+
+        return self._total_words
+
+    @property
+    def unique_words(self):
+
+        return self._unique_words
+
+    @property
+    def letters(self):
+
+        return self._letters
+
+    @property
+    def longest_word_length(self):
+
+        return self._longest_word_length
+
+    def tokenize(self, text):
+
+        text = ENSURE_UNICODE(text)
+        for word in self._tokenizer(text):
+            yield word if self._case_sensitive else word.lower()
+
+    def keys(self):
+
+        for key in self._dictionary.keys():
+            yield key
+
+    def words(self):
+
+        for word in self._dictionary.keys():
+            yield word
+
+    def items(self):
+
+        for word in self._dictionary.keys():
+            yield word, self._dictionary[word]
+
+    def load_dictionary(self, filename, encoding="utf-8"):
+
+        with load_file(filename, encoding) as data:
+            data = data if self._case_sensitive else data.lower()
+            self._dictionary.update(json.loads(data))
+            self._update_dictionary()
+
+    def load_text_file(self, filename, encoding="utf-8", tokenizer=None):
+
+        with load_file(filename, encoding=encoding) as data:
+            self.load_text(data, tokenizer)
+
+    def load_text(self, text, tokenizer=None):
+
+        text = ENSURE_UNICODE(text)
+        if tokenizer:
+            words = [x if self._case_sensitive else x.lower() for x in tokenizer(text)]
+        else:
+            words = self.tokenize(text)
+
+        self._dictionary.update(words)
+        self._update_dictionary()
+
+    def load_words(self, words):
+
+        words = [ENSURE_UNICODE(w) for w in words]
+        self._dictionary.update(
+            [word if self._case_sensitive else word.lower() for word in words]
+        )
+        self._update_dictionary()
+
+    def add(self, word):
+
+        word = ENSURE_UNICODE(word)
+        self.load_words([word])
+
+    def remove_words(self, words):
+
+        words = [ENSURE_UNICODE(w) for w in words]
+        for word in words:
+            self._dictionary.pop(word if self._case_sensitive else word.lower())
+        self._update_dictionary()
+
+    def remove(self, word):
+
+        word = ENSURE_UNICODE(word)
+        self._dictionary.pop(word if self._case_sensitive else word.lower())
+        self._update_dictionary()
+
+    def remove_by_threshold(self, threshold=5):
+
+        keys = [x for x in self._dictionary.keys()]
+        for key in keys:
+            if self._dictionary[key] <= threshold:
+                self._dictionary.pop(key)
+        self._update_dictionary()
+
+    def _update_dictionary(self):
+        self._longest_word_length = 0
+        self._total_words = sum(self._dictionary.values())
+        self._unique_words = len(self._dictionary.keys())
+        self._letters = set()
+        for key in self._dictionary:
+            if len(key) > self._longest_word_length:
+                self._longest_word_length = len(key)
+            self._letters.update(key)
+
+#spell checking algo ends here
 # Create your views here.
 @login_required(login_url='/login/')
 def seat_render(request):
@@ -102,7 +499,7 @@ def logout_view(request):
     return HttpResponseRedirect('/login/')
 
 def enqiury(request):
-    print(request.user.is_authenticated)
+
     if request.user.is_authenticated:
         f=True
         arr=[]
@@ -204,7 +601,7 @@ def show_flights(request):
 
 
 
-        e=enquiry(user=u1,enquiry_id=id,search_arri_city=dep,search_depa_city=arr,search_date_time=datetime.datetime.now(),search_for_date=dep_date,search_way_type=1)
+        e=enquiry(user=u1,enquiry_id=id,search_arri_city=dep,search_depa_city=arr,search_date_time=datetime.datetime.now(),search_for_date=dep_date,search_way_type=1,no_of_pass=int(passe))
         e.save()
     if request.user.is_anonymous:
         dep = request.POST.get('from')
@@ -228,11 +625,11 @@ def show_flights(request):
 
 def seat_booking(request,todo_id,enq_id):
     e=enquiry.objects.get(enquiry_id=enq_id)
-    print(e.no_of_pass)
+
     if e.no_of_pass==1:
-        return render(request,'ap/seat_pattern.html')
+        return render(request,'ap/seat_pattern.html',{"pass":e.no_of_pass,'leg':todo_id,'enq':enq_id})
     else:
-        return render(request,'ap/seat_pattern2.html')
+        return render(request,'ap/seat_pattern2.html',{"pass":e.no_of_pass,'leg':todo_id,'enq':enq_id})
 
 def process(request):
     spell = SpellChecker()
@@ -254,44 +651,44 @@ def process(request):
     date=list1[2]+"-"+list1[1]+"-"+list1[0]
     comment1=request.POST.get('message')
     comment1=comment1.split(" ")
-
+    print(comment1,1)
     index_of_misspelled=[]
     index_of_abbri=[]
     for i in range(len(comment1)):
-        if shortcuts.objects.filter(shortcut=comment1[i].lower()).exists():
-            c=shortcuts.objects.get(shortcut=comment1[i])
+        if shortcuts.objects.filter(shortcut=comment1[i].lower().rstrip('\r\n')).exists():
+            c=shortcuts.objects.get(shortcut=comment1[i].rstrip('\r\n'))
             index_of_abbri.append(i)
-            print(c.abbri)
             comment1[i]=c.abbri
+
     comment2=[]
     for i in range(len(comment1)):
         if i not in index_of_abbri:
             comment2.append(comment1[i])
     misspelled = spell.unknown(comment2)
     misspelled1 = list(misspelled)
-
-    print(comment1)
-    print(comment2)
-    print(misspelled1)
-    for i in range(len(comment1)):
-        if comment1[i] in misspelled1 and i not in index_of_abbri:
-            index_of_misspelled.append(i)
-    print(index_of_misspelled)
+    
     for i in range(len(misspelled1)):
-        print(i)
-        comment1[index_of_misspelled[i]]=spell.correction(misspelled1[i]).rstrip("\n")
+        if misspelled1[i] in comment1 :
+            for j in range(len(comment1)):
+                if misspelled1[i]==comment1[j]:
+                    index_of_misspelled.append(j)
+                    break
+
+
+    for i in range(len(misspelled1)):
+
+        comment1[index_of_misspelled[i]]=spell.correction(misspelled1[i]).rstrip("\n ")
+
     corrected_code=""
-
-
     for i in comment1:
         corrected_code+=i+" "
-    c=comment(comment_id=comment_id,user=u,flight_id=f1,date_req=date,org_comm=request.POST.get('message'),exp1=corrected_code)
+    print(corrected_code)
+    c=comment(comment_id=comment_id,user=u,flight_id=f1,date_req=date,org_comm=request.POST.get('message'),exp1=corrected_code,date_time=datetime.datetime.now())
     c.save()
     return HttpResponseRedirect('/contact/')
 
-
-
 #otp process starts here
+
 def otpprocess(request):
     email = request.POST.get('username')
     if User.objects.filter(email=email).exists():
@@ -304,8 +701,7 @@ def otpprocess(request):
             otp_id="O"+str(randint(100,999))
             if one_time_password.objects.filter(otp_id=otp_id).exists()==False:
                 break
-
-        message = f'Hi {u.username}, your otp for your password change {otp} and otp id{otp_id}(for sequrity purpose). This otp is valid upto 5 min'
+        message = f'Hi {u.username}, your otp for your password change {otp} and otp id{otp_id} (for sequrity purpose). This otp is valid upto 5 min'
         email_from = settings.EMAIL_HOST_USER
         recipient_list = [u.email, ]
         send_mail(subject, message, email_from, recipient_list)
@@ -322,7 +718,7 @@ def name_otp(request):
 def check_otp(request):
     otp_id=request.POST.get("otp_id")
     otp=request.POST.get("otp")
-    print(type(otp_id),otp_id,type(otp),otp)
+
     one=one_time_password.objects.get(otp_id=otp_id)
 
     now=datetime.datetime.now()
@@ -357,7 +753,6 @@ def change_password(request,otp_id):
     else:
         messages.info(request, "Password Dosent match")
         return HttpResponseRedirect('/change_password/{}/'.format(otp_id))
-
 
 #otp process ends here
 
@@ -394,3 +789,132 @@ def dic(request):
     for word in misspelled:
         print(spell.correction(word.rstrip("\n")))
     return HttpResponseRedirect("/enqiry/")
+
+def booking(request,enq,leg1):
+    arr=[]
+    enq_obj=enquiry.objects.get(enquiry_id=enq)
+    for i in range(72):
+        arr.append(request.POST.get('seat-assignment{}'.format(i)))
+    new_arr=[]
+    c1 =city_code.objects.get(city_name=enq_obj.search_depa_city)
+    c2=city_code.objects.get(city_name=enq_obj.search_arri_city)
+    l=leg.objects.get(leg_id=leg1)
+    price=l.total_price
+
+    price=price+price*(randint(1,12)/100)
+    price1=price
+
+    price=price*enq_obj.no_of_pass
+    for i in arr:
+        if i is not None:
+            new_arr.append(i)
+    return render(request,'ap/pricing.html',{"enq":enq_obj,'c1':c1,'c2':c2,"r":range(1,enq_obj.no_of_pass+1),"leg":leg1,"seats":new_arr,"price":price,"obj":l,"price1":price1})
+
+def payment(request,leg1):
+    u=request.user
+    u1=User.objects.get(username=u)
+    u2=userinfo.objects.get(user_id=u1)
+    first_name=[]
+    last_name=[]
+    age=[]
+    seats=[]
+    s=request.POST.get("flag")
+    s=s.split(",")
+    seats.append(s[0][2:len(s[0])-1])
+    for i in range(len(s)):
+        if i!=0 and i!=len(s)-1:
+            seats.append(s[i][2:len(s[i])-1])
+    seats.append(s[len(s)-1][2:len(s[0])-1])
+    l=leg.objects.get(leg_id=leg1)
+    today=l.date_time_departure_stamp
+    board=today-datetime.timedelta(minutes=30)
+    bcc=board.strftime("%m/%d/%Y, %H:%M:%S")
+    bcc=bcc.split(",")
+    today1=l.date_time_arrival_stamp
+    date_time = today.strftime("%m/%d/%Y, %H:%M:%S")
+    date_time=date_time.split(",")
+    date_time1 = today1.strftime("%m/%d/%Y, %H:%M:%S")
+    date_time1 = date_time1.split(",")
+
+    while True:
+        trans_id = "#TRA" + str(randint(10000, 99999))
+        if passengers.objects.filter(transaction=trans_id).exists()==False:
+            break
+
+    for i in range(len(seats)):
+        a=request.POST.get("firstName{}".format(i+1))
+        b=request.POST.get("lastName{}".format(i+1))
+        c=request.POST.get("age{}".format(i+1))
+
+        if a!=None and b!=None and c!=None:
+            first_name.append(a)
+            last_name.append(b)
+            age.append(int(c))
+            p=passengers(leg=l,seat_id=seats[i],first_name=first_name[i],last_name=last_name[i],age=age[i],user=u2,transaction=trans_id)
+            p.save()
+    c1 = city_code.objects.get(IATA=l.from_place)
+    c2 = city_code.objects.get(IATA=l.to_place)
+    print(u1.email)
+    subject = 'Sucessfull flight payment'
+    message = f'Hi {u1.username}, your payment is sucessfull.\n your transaction id is {trans_id} '
+    email_from = settings.EMAIL_HOST_USER
+    recipient_list = [u1.email, ]
+    send_mail(subject, message, email_from, recipient_list)
+
+    return render(request,'ap/iter.html',{"first":first_name,"last":last_name,"age":age,"seats":seats,"pass":range(len(seats)),"l":l,"c1":c1,"c2":c2,"arri_time":date_time1[1],"dep_time":date_time[1],"date":date_time[0],"board":bcc[1]})
+
+def status(request):
+    return render(request,'ap/trans.html')
+
+def status_check(request):
+    id=request.POST.get('Transaction')
+    p=passengers.objects.filter(transaction=id)
+    l=leg.objects.get(leg_id=p[0].leg.leg_id)
+    today = l.date_time_departure_stamp
+    board = today - datetime.timedelta(minutes=30)
+    bcc = board.strftime("%m/%d/%Y, %H:%M:%S")
+    bcc = bcc.split(",")
+    today1 = l.date_time_arrival_stamp
+    date_time = today.strftime("%m/%d/%Y, %H:%M:%S")
+    date_time = date_time.split(",")
+    date_time1 = today1.strftime("%m/%d/%Y, %H:%M:%S")
+    date_time1 = date_time1.split(",")
+    c1=city_code.objects.get(IATA=p[0].leg.from_place)
+    c2=city_code.objects.get(IATA=p[0].leg.to_place)
+    return render(request,'ap/trans1.html',{"p":p,"c1":c1,"c2":c2,"board":bcc[0],"arri_time":date_time1[1],"dep_time":date_time[1],"date":date_time[0]})
+
+#
+# def words(text): return re.findall(r'\w+', text.lower())
+#
+#
+# WORDS = Counter(words(open('engmix.txt', "r", encoding='utf-8', errors='ignore').read()))
+#
+#
+# def P(word, N=sum(WORDS.values())):
+#     return WORDS[word] / N
+#
+#
+# def correction(word):
+#     return max(candidates(word), key=P)
+#
+#
+# def candidates(word):
+#     return (known([word]) or known(edits1(word)) or known(edits2(word)) or [word])
+#
+#
+# def known(words):
+#     return set(w for w in words if w in WORDS)
+#
+#
+# def edits1(word):
+#     letters = 'abcdefghijklmnopqrstuvwxyz'
+#     splits = [(word[:i], word[i:]) for i in range(len(word) + 1)]
+#     deletes = [L + R[1:] for L, R in splits if R]
+#     transposes = [L + R[1] + R[0] + R[2:] for L, R in splits if len(R) > 1]
+#     replaces = [L + c + R[1:] for L, R in splits if R for c in letters]
+#     inserts = [L + c + R for L, R in splits for c in letters]
+#     return set(deletes + transposes + replaces + inserts)
+#
+#
+# def edits2(word):
+#     return (e2 for e1 in edits1(word) for e2 in edits1(e1))

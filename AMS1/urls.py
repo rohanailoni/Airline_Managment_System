@@ -15,7 +15,7 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
-from app.views import seat_render,seat_con,login_render,register_render,register_auth,login_auth,logout_view,enqiury,contact,faker,show_flights,seat_booking,process,otpprocess,name_otp,check_otp,faker1,dic,change_password
+from app.views import seat_render,seat_con,login_render,register_render,register_auth,login_auth,logout_view,enqiury,contact,faker,show_flights,seat_booking,process,otpprocess,name_otp,check_otp,faker1,dic,change_password,booking,payment,status,status_check
 admin.site.site_header = 'flight admin'
 admin.site.site_title = 'flight admin'
 admin.site.site_url = 'http://flight.com/'
@@ -40,6 +40,10 @@ urlpatterns = [
     path('check_otp/',check_otp),
     path('faker1/',faker1),
     path('dic/',dic),
-    path('change_password/<str:otp_id>/',change_password)
+    path('change_password/<str:otp_id>/',change_password),
+    path('final/<str:enq>/<str:leg1>/',booking),
+    path('payment/<str:leg1>/',payment),
+    path('transaction/',status),
+    path('transaction_check/',status_check)
 
 ]
