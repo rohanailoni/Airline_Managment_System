@@ -23,9 +23,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'y=(u@5h6xmbru(zswh05fpcx19bwic$pw#ic^q(nw2ej18adu-'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['flightwrapper.herokuapp.com/','127.0.0.1']
 
 
 # Application definition
